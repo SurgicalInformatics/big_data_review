@@ -45,7 +45,8 @@ ConvertWorldSimple <- function(mapdata, min.area = 0) {
 
 data("wrld_simpl")
 #remove small islands
-world_map <- ConvertWorldSimple(wrld_simpl, min.area = 0.8)
+world_map <- ConvertWorldSimple(wrld_simpl, min.area = 0.8) %>% 
+	filter(country != "Antarctica")
 
 
 # check that names match

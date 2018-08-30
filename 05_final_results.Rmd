@@ -1,0 +1,485 @@
+---
+title: "Big Data and Global Surgery review"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(shiny)
+library(plotly)
+library(tidyverse)
+library(knitr)
+library(patchwork)
+library(scales)
+library(ggmap)
+library(maptools)
+
+#REFORMAT and TIDY the final included studies
+
+allstudies = read_csv("final_included_papers_august2018.csv", skip = 19) %>% 
+	mutate_if(is.character, str_trim) %>% 
+	mutate(study_id = paste(author %>% tolower %>% str_replace_all(" ", "_"), year, sep = "-")) %>% 
+	mutate(study_design = fct_recode(study_design,
+																	 "Cohort (single centre)" = "Cohort (one centre)",
+																	 "Cohort (country)"       = "Cohort (single country)") %>% 
+				 	fct_relevel("Cohort (single centre)", "Cohort (country)", "Cohort (multiple countries)", "Database")) %>% 
+	mutate(surgical_speciality = fct_recode(surgical_speciality,
+																					"Breast surgery"        = "Breast",
+																					"General surgery"       = "General",
+																					"General surgery"       = "Urology",
+																					"General surgery"       = "General Surgery",
+																					"ENT"                   = "Head and neck",
+																					"Multiple specialities" = "Multiple",
+																					"Multiple specialities" = "Multiple specialities (elective surgery)")) %>% 
+	mutate(surgical_speciality = fct_collapse(surgical_speciality,
+																						"ENT/OMS"                    = c("ENT", "Maxillofacial surgery"),
+																						"Obstetrics and gynaecology" = c("Obstetrics and gynaecology", "Gynaecology"))) %>% 
+	mutate(outcome_primary = fct_recode(outcome_primary, "Patient characteristics" = "Patient demographics",
+																			"Outcomes of surgery" = "Post-operative outcomes") %>% 
+				 	fct_relevel("Patient characteristics", "Incidence", "Access", "Outcomes of surgery", "Patient cost", "Survival")) %>% 
+	mutate(n_comment = fct_explicit_na(n_comment, "single")) %>% 
+	mutate(n_comment.2groups = fct_collapse(n_comment,
+																					"lmic_separated" = c("single", "multiple", "multiple_lmic"),
+																					"lmic_hic_together" = c("multiple_worldwide", "multiple_hic"))) %>% 
+	mutate(n.groups = cut(n,
+												breaks = c(300, 500, 1000, 2000, 5000, 10000, 428346)) %>% 
+				 	fct_recode("300-500"        = "(300,500]",
+				 						 "500-1,000"      = "(500,1e+03]",
+				 						 "1000-2000"      = "(1e+03,2e+03]",
+				 						 "2,000-5,000"    = "(2e+03,5e+03]",
+				 						 "5,000-10,000"   = "(5e+03,1e+04]",
+				 						 "10,000-428,346" = "(1e+04,4.28e+05]")) %>% 
+	mutate(info = paste0(author, ". (", year, "): ", n %>% formatC(format = "f", big.mark = ",", digits = 0), " patients, ", surgical_speciality))
+
+
+# GET and COUNTRY information where possible
+# reformat from wide to long
+
+# str_extra() below
+# extract number (in brackets after the country name), e.g. India (1000)
+# str_remove() below
+# now remove the number from the country name column, e.g. (1000) - digit in brackets
+
+
+
+# available in the manuscripts in the Authorship+Collaborators section, using CSVs for convenience.
+
+gs1_countries = read_csv("gs1_countries.csv") %>% 
+	mutate(study_id = "globalsurg_collaborative-2016") %>% 
+	rename(country = gs1)
+gs2_countries = read_csv("gs2_countries.csv")  %>% 
+	mutate(study_id = "globalsurg_collaborative-2018") %>% 
+	rename(country = gs2)
+
+gs_countries = bind_rows(gs1_countries, gs2_countries)
+
+add_globalsurg_countries = allstudies %>% 
+	filter(author == "GlobalSurg Collaborative") %>% 
+	select(study_id, year, n_studytotal = n) %>% 
+	full_join(gs_countries) %>% 
+	mutate(n_country = NA)
+rm(gs_countries, gs1_countries, gs2_countries)
+
+# reshape other studies with multiple countries currently recorded in the same cell
+
+
+lmic_countries = read_csv("wb_lmic_countries.csv") %>% 
+	rename(country_wb = country)
+
+countrylevel = allstudies %>% 
+	filter(n_comment != "multiple_worldwide") %>% 
+	select(study_id, year, n_studytotal = n, countries) %>% 
+	separate(countries, into = paste0("country_", 1:30), sep = ",") %>% 
+	gather(country_n, country, -study_id, -year, -n_studytotal) %>% 
+	drop_na(country) %>% 
+	select(-country_n) %>% 
+	mutate(n_country = str_extract(country, "\\d+") %>% as.numeric())     %>%  
+	mutate(country   = str_remove(country, "\\(\\d+\\)") %>% str_trim())  %>%    
+	mutate(n_country = ifelse(is.na(n_country), n_studytotal, n_country)) %>% 
+	mutate(n_country = ifelse(n_country == 999999999, NA, n_country)) %>% 
+	bind_rows(add_globalsurg_countries) %>% 
+	mutate(country_wb = fct_recode(country,
+																 "Iran, Islamic Rep."   = "Iran",
+																 "Congo, Dem. Rep."     = "Congo Dem. Rep.",
+																 "Venezuela, RB"        = "Venezuela",
+																 "Gambia, The"          = "Gambia",
+																 "Egypt, Arab Rep."     = "Egypt",
+																 "Congo, Rep."          = "Congo Rep.",
+																 "Hong Kong SAR, China" = "Hong Kong, China (SAR)",
+																 "West Bank and Gaza"   = "Palestine, State of",
+																 "St. Kitts and Nevis"  = "Saint Kitts and Nevis"
+	) %>% as.character()) %>% 
+	left_join(lmic_countries)
+
+rm(add_globalsurg_countries)
+
+```
+
+# Overview numbers
+
+Final number of papers included in the systematic review: `r nrow(allstudies)` (see the full PRISMA diagram in the main paper.).
+
+Some of these studies did not provide patient numbers split for their LMIC and HIC participants.
+
+```{r total_n_studies}
+
+allstudies %>% 
+	add_count(n_comment.2groups, wt = n) %>% 
+	select(-n) %>% 
+	add_count(n_comment.2groups) %>% 
+	distinct(n_comment.2groups, n, nn) %>% 
+	select(description = n_comment.2groups, n_studies = n, n_patients = nn) %>% 
+	kable()
+
+```
+
+Range of study sizes in the LMIC separated group:
+
+```{r separate_lmic_studies}
+
+lmic_separated = allstudies %>% 
+	filter(n_comment.2groups == "lmic_separated")
+
+lmic_separated$n %>% range()
+
+```
+
+
+Number of studies with over 3,000 LMIC patients:
+
+```{r count_lmic_studies}
+
+lmic_separated %>% 
+	count(n > 3000) %>% 
+	kable()
+```
+
+5 largest studies:
+
+
+```{r top_5_studies}
+
+lmic_separated %>% 
+	arrange(-n) %>% 
+	select(n, countries, study_design) %>% 
+	slice(1:5) %>% 
+	kable()
+
+```
+
+
+Studies where country-specific n patients was not separated/given:
+
+```{r county_n_not_available}
+
+countrylevel %>% 
+	filter(is.na(n_country)) %>% 
+	arrange(year) %>% 
+	distinct(study_id) %>% 
+	kable()
+
+```
+
+
+
+```{r sumamrise_countries}
+
+countrysummary = countrylevel %>% 
+	filter(lmic == "lmic") %>% 
+	filter() %>% 
+	group_by(country) %>% 
+	summarise(n_studies = n_distinct(study_id),
+						n_country = sum(n_country, na.rm = TRUE))
+```
+
+
+`r countrysummary$country %>% unique() %>% length()` LMIC countries have taken part in Surgical Big Data Studies.
+
+
+# Yearly analysis (Figure X)
+
+
+```{r yearly_plots}
+
+# 0 studies from 2013 in our review so adding it in as a 0 for the cumulative plot
+add_2013 = data_frame(year = 2013, patients_peryear = 0)
+
+studies_peryear = lmic_separated %>% 
+	count(year)
+
+annual_summary = lmic_separated %>%
+	count(year, wt = n) %>% 
+	rename(patients_peryear = nn) %>% 
+	bind_rows(add_2013) %>% 
+	ungroup() %>% 
+	arrange(year) %>% 
+	mutate(patients_cumulativeyear = cumsum(patients_peryear))
+
+p1 = lmic_separated %>% 
+	mutate(dummy = 1) %>% 
+	group_by(year) %>% 
+	arrange(n) %>% 
+	mutate(nth_study = cumsum(dummy)) %>% 
+	ggplot(aes(x = year)) +
+	#geom_col(colour = "blue", fill = NA) +
+	geom_point(aes(y = nth_study, fill = n.groups, text = info), shape = 21, size = 3.5) +
+	theme_classic() +
+	coord_flip() +
+	scale_x_continuous(breaks = 2008:2018) +
+	scale_y_continuous("Studies each year", breaks = 1:max(studies_peryear$nn)) +
+	scale_fill_viridis_d("N patients") +
+	theme(legend.position = c(0.85, 0.2),
+				axis.text = element_text(colour = "black")) +
+	xlab("   ")
+
+
+p2 = lmic_separated %>% 	
+	group_by(year) %>% 
+	summarise(patients_peryear = sum(n)) %>% 
+	bind_rows(add_2013) %>% 
+	ungroup() %>% 
+	arrange(year) %>% 
+	mutate(patients_cumulativeyear = cumsum(patients_peryear)) %>% 
+	mutate(my_hjust = ifelse(year == 2018, 1.1, -0.1)) %>% 
+	ggplot(aes(x = year, y = patients_cumulativeyear)) +
+	geom_col(colour = "blue", fill = NA) +
+	geom_text(aes(label = patients_cumulativeyear %>% 
+									formatC(format = "f", big.mark = ",", digits = 0),
+								hjust = my_hjust)) +
+	theme_classic() +
+	coord_flip() +
+	scale_y_continuous(labels = comma, expand = c(0, 0)) +
+	scale_x_continuous(breaks = 2008:2018) +
+	theme(axis.text = element_text(colour = "black")) +
+	xlab("") +
+	ylab("Cumulative number of patients")
+
+```
+
+
+Column {.tabset  .tabset-fade}
+-------------------------------------
+
+### Interactive
+
+```{r}
+
+ggplotly(p1, tooltip = c("text"))
+```   
+
+### Print
+
+```{r, fig.width=10}
+
+p1+p2
+
+```
+
+
+# Maps (Figure 2)
+
+
+```{r maps_setup}
+
+
+countrysummary = countrysummary %>% 
+	mutate(country = fct_recode(country,
+															"Lao People's Democratic Republic" = "Lao PDR",
+															"Burma"      = "Myanmar",
+															"Viet Nam"   = "Vietnam",
+															"Iran (Islamic Republic of)" = "Iran",
+															"Democratic Republic of the Congo" = "Congo Dem. Rep.",
+															"Congo" = "Congo Rep.",
+															"Libyan Arab Jamahiriya" = "Libya",
+															"Mauritania" = "Mauritius",
+															"United Republic of Tanzania" = "Tanzania"
+	) %>% as.character())
+
+
+# Get map ------------
+# https://groups.google.com/forum/#!msg/ggplot2/KAKhoE0GO4U/lsAXwQWNwhoJ
+# Sundar Dorai-Raj
+PolygonCoords <- function(polygon) {
+	polygons <- polygon@Polygons
+	coords.list <- lapply(seq_along(polygons), function(i) {
+		# Extract the group, sequence, area, longitude, and latitude.
+		coords <- polygons[[i]]@coords
+		cbind(i, 1:nrow(coords), polygons[[i]]@area, coords)
+	})
+	coords.df <- as.data.frame(do.call(rbind, coords.list))
+	names(coords.df) <- c("order", "seq", "area", "long", "lat")
+	return(coords.df)
+}
+
+ConvertWorldSimple <- function(mapdata, min.area = 0) {
+	# min.area is the minimum size of the polygons. Setting to some  # positive value will filter out tiny islands.
+	coords.list <- lapply(mapdata@polygons, PolygonCoords)
+	ncoords <- sapply(coords.list, nrow)
+	coords.df <- do.call(rbind, coords.list)
+	coords.df$country <- rep(mapdata@data$NAME, ncoords)
+	country.group <- factor(paste(coords.df$country, coords.df$order))
+	coords.df$group <- as.numeric(country.group)
+	coords.df <- coords.df[coords.df$area >= min.area, ]
+	return(coords.df)
+}
+
+
+#--------
+
+
+data("wrld_simpl")
+#remove small islands
+world_map <- ConvertWorldSimple(wrld_simpl, min.area = 0.8) %>% 
+	filter(country != "Antarctica")
+
+
+# # check that names match
+# countries_matching = world_map %>% 
+# 	distinct(country) %>% 
+# 	#rename(country = region) %>% 
+# 	mutate(nameorigin = "mapdata")
+# 
+# mismatches = countrysummary %>% 
+# 	left_join(countries_matching) %>% 
+# 	filter(is.na(nameorigin))
+
+mapdata = left_join(world_map, countrysummary) %>% 
+	mutate(n_country.groups = cut(n_country,
+																breaks = c(0, 100, 300, 1000, 3000, 15000, 40000, 473292))%>% 
+				 	fct_recode("<100 or Unknown" = "(0,100]",
+				 						 "100-300"         = "(100,300]",
+				 						 "300-1,000"       = "(300,1e+03]",
+				 						 "1,000-3,000"     = "(1e+03,3e+03]",
+				 						 "1000-15,000"     = "(3e+03,1.5e+04]",
+				 						 "15,000-40,000"   = "(1.5e+04,4e+04]" ,
+				 						 "40,000-428,346"  = "(4e+04,4.73e+05]")) %>% 
+	mutate(n_studies.groups = cut(n_studies, breaks = c(0, 1, 2, 3, 5, 10, 15)) %>% 
+				 	fct_recode("1"     = "(0,1]",
+				 						 "2"     = "(1,2]",
+				 						 "3"     = "(2,3]",
+				 						 "4-5"   = "(3,5]",
+				 						 "6-10"  = "(5,10]",
+				 						 "11-15" = "(10,15]"))
+
+
+#mapdata$n_country.groups %>% levels()
+#mapdata$n_studies.groups %>% levels()
+```
+
+
+```{r map_n_studies}
+
+mycols = viridisLite::viridis(n = mapdata$n_country.groups %>% levels() %>% length())
+
+m1 = mapdata %>% 
+	ggplot(aes(x=long, y = lat, group = group, fill = n_studies.groups)) +
+	geom_polygon(colour = "black") +
+	#theme_void() +
+	coord_map("moll") +
+	ggthemes::theme_map() +
+	theme(legend.position = "right",
+				#legend.justification = 'center',
+				legend.text = element_text(size=10, face='bold'),
+				legend.title = element_blank(),
+				plot.caption = element_text(size=9, face='bold'),
+				plot.title   = element_text(size=12))+
+	guides(fill=guide_legend(ncol=1, reverse=TRUE)) +
+	scale_fill_viridis_d(na.value = NA) +
+	ggtitle("(a) N studies per LMIC country")
+
+
+
+```
+
+
+
+
+```{r map_n_patients}
+
+mycols = viridisLite::viridis(n = mapdata$n_country.groups %>% levels() %>% length())
+
+m2 = mapdata %>% 
+	ggplot(aes(x=long, y = lat, group = group, fill = n_country.groups)) +
+	geom_polygon(colour = "black") +
+	#theme_void() +
+	coord_map("moll") +
+	ggthemes::theme_map() +
+	theme(legend.position = "right",
+				#legend.justification = 'center',
+				legend.text = element_text(size=10, face='bold'),
+				legend.title = element_blank(),
+				plot.caption = element_text(size=9, face='bold'),
+				plot.title   = element_text(size=12))+
+	guides(fill=guide_legend(ncol=1, reverse=TRUE)) +
+	scale_fill_viridis_d(na.value = NA) +
+	ggtitle("(b) N patients per LMIC country")
+
+
+
+
+```
+
+
+
+```{r, fig.width=20}
+
+m1+m2
+
+```
+
+
+
+# Outcomes  (Figure 3)
+
+
+```{r}
+
+	
+p3 = allstudies %>% 	
+	mutate(dummy = 1) %>% 
+	group_by(outcome_primary) %>% 
+	arrange(n) %>% 
+	mutate(nth_study = cumsum(dummy)) %>% 
+	ggplot(aes(x = fct_rev(outcome_primary))) +
+	geom_point(aes(y = nth_study, fill = n.groups, text = info), shape = 21, size = 4) +
+	theme_classic() +
+	coord_flip() +
+	scale_y_continuous("Studies per outcome") +
+	scale_fill_viridis_d("N patients") +
+		theme(legend.position = c(0.85, 0.2),
+				axis.text = element_text(colour = "black")) +
+	guides(fill=guide_legend(ncol=4)) +
+	xlab("")
+
+
+```
+
+
+Column {.tabset  .tabset-fade}
+-------------------------------------
+
+### Interactive
+
+```{r}
+
+ggplotly(p3, tooltip = c("text"))
+```   
+
+### Print
+
+```{r, fig.width=10}
+
+p3
+
+```
+
+
+
+
+

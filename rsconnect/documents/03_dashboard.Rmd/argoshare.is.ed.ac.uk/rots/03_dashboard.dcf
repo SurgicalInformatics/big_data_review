@@ -5,8 +5,8 @@ account: rots
 server: argoshare.is.ed.ac.uk
 hostUrl: https://argoshare.is.ed.ac.uk/__api__
 appId: 45
-bundleId: 109
-url: https://argoshare.is.ed.ac.uk/content/45/
-when: 1535409009.80742
+bundleId: 115
+url: https://argoshare.is.ed.ac.uk/bigdata_review/
+when: 1535564476.54313
 asMultiple: FALSE
 asStatic: TRUE

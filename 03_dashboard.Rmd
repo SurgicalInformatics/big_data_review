@@ -4,6 +4,8 @@ output:
   flexdashboard::flex_dashboard:
     orientation: columns
     vertical_layout: scroll
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -12,40 +14,49 @@ library(tidyverse)
 library(shiny)
 library(plotly)
 load("02_country_summary.rda")
-load("02_alldata.rda")
+load("02_country_data.rda")
+load("02_allstudies.rda")
 load("04_myworldmap.rda")
 
 
-myplotdata = mydata %>% 
-	mutate(dummy = 1) %>% 
-	group_by(year) %>% 
-	arrange(n_studytotal) %>% 
-	mutate(nth_study = cumsum(dummy)) %>% 
-	mutate(n_studytotal.groups = cut(n_studytotal,
+myplotdata = allstudies %>% 
+	filter(author != "Global Burden of Disease Cancer Collaboration") %>% 
+	mutate(n.groups = cut(n,
 																	 breaks = c(300, 500, 1000, 2000, 5000, 10000, 428346)) %>% 
 				 	fct_recode("300-500"        = "(300,500]",
 				 						 "500-1,000"      = "(500,1e+03]",
 				 						 "1000-2000"      = "(1e+03,2e+03]",
 				 						 "2,000-5,000"    = "(2e+03,5e+03]",
 				 						 "5,000-10,000"   = "(5e+03,1e+04]",
-				 						 "10,000-42,8346" = "(1e+04,4.28e+05]")) %>% 
-	mutate(info = paste0(surgical_speciality, ": ", n_studytotal %>% formatC(format = "f", big.mark = ",", digits = 0), " patients"))
+				 						 "10,000-428,346" = "(1e+04,4.28e+05]")) %>% 
+	mutate(info = paste0(author, ". (", year, "): ", n %>% formatC(format = "f", big.mark = ",", digits = 0), " patients, ", surgical_speciality))
 	
 annual_summary = myplotdata %>%
 	group_by(year) %>%
-	summarise(n_year = sum(n_country), y_location = max(nth_study)+1)
+	summarise(n_year = sum(n))
 
+speciality_summary = myplotdata %>%
+	group_by(surgical_speciality) %>%
+	summarise(n_speciality = sum(n))
 
 ```
 
-### Number of patients per country
+### Number of patients per country (59 studies, excluding the 11 where individual numbers were not distinguisable or n<100)
 
 ```{r}
 
 mycols = RColorBrewer::brewer.pal(9, 'PuRd')[4:9]
 
 mapdata %>% 
-  ggplot(aes(x=long, y = lat, group = group, fill = n_country %>% cut(breaks = c(0, 3, 100, 500, 1000, 5000, 10000, 428346)))) +
+		mutate(n_country.groups = cut(n_country,
+																	 breaks = c(300, 500, 1000, 2000, 5000, 10000, 428346)) %>% 
+				 	fct_recode("300-500"        = "(300,500]",
+				 						 "500-1,000"      = "(500,1e+03]",
+				 						 "1000-2000"      = "(1e+03,2e+03]",
+				 						 "2,000-5,000"    = "(2e+03,5e+03]",
+				 						 "5,000-10,000"   = "(5e+03,1e+04]",
+				 						 "10,000-428,346" = "(1e+04,4.28e+05]")) %>% 
+  ggplot(aes(x=long, y = lat, group = group, fill = n_country.groups)) +
   geom_polygon(colour = "black") +
   #theme_void() +
   coord_map("moll") +
@@ -59,56 +70,175 @@ mapdata %>%
   guides(fill=guide_legend(ncol=2, reverse=TRUE)) +
 	scale_fill_viridis_d(na.value = NA)
 
+country_summary$country %>% unique() %>% length()
 
 ```
 
 
 
-### Studies each year, coloured by N patients
+### Studies each year, coloured by N patients (69 studies - Excluding the GBD as it's not cohort/database/registry).
 
 ```{r}
 
 
 	
 p1 = myplotdata %>% 	
+	mutate(dummy = 1) %>% 
+	group_by(year) %>% 
+	arrange(n) %>% 
+	mutate(nth_study = cumsum(dummy)) %>% 
 	ggplot(aes(x = year)) +
 	#geom_col(colour = "blue", fill = NA) +
-	geom_point(aes(y = nth_study, fill = n_studytotal.groups, text = info), shape = 21, size = 4) +
+	geom_point(aes(y = nth_study, fill = n.groups, text = info), shape = 21, size = 4) +
 	theme_classic() +
 	geom_text(data = annual_summary, aes(y = -0.2, label = n_year %>% formatC(format = "f", big.mark = ",", digits = 0)), hjust = -0.3) +
 	coord_flip() +
-	scale_x_continuous(breaks = 2007:2018) +
+	scale_x_continuous(breaks = 2008:2018) +
 	scale_y_continuous("Studies each year", limits = c(-0.2, 27)) +
-	scale_fill_viridis_d("N patients", direction = -1) +
-	theme(legend.position = "top")
+	scale_fill_viridis_d("N patients") +
+	theme(legend.position = "top") +
+	xlab("")
 
 
 ggplotly(p1, tooltip = c("text"))
 
 ```
 
+### Cumulative number of patients 2008-2018
+
+```{r}
+
+
+add_2013 = data_frame(year = 2013, patients_peryear = 0)
+
+myplotdata %>% 	
+	group_by(year) %>% 
+	summarise(patients_peryear = sum(n)) %>% 
+	bind_rows(add_2013) %>% 
+	ungroup() %>% 
+	arrange(year) %>% 
+	mutate(patients_cumulativeyear = cumsum(patients_peryear)) %>% 
+	ggplot(aes(x = year, y = patients_cumulativeyear)) +
+	geom_col(colour = "blue", fill = NA) +
+	theme_classic() +
+	coord_flip() +
+	scale_x_continuous(breaks = 2008:2018)
+
+```
 
 
 
-### Studies each year, coloured by surgical specialty
+### Studies per speciality, coloured by N patients (69 studies - Excluding the GBD as it's not cohort/database/registry).
 
 ```{r}
 
 p2 = myplotdata %>% 	
-	ggplot(aes(x = year)) +
+	mutate(dummy = 1) %>% 
+	group_by(surgical_speciality) %>% 
+	arrange(n) %>% 
+	mutate(nth_study = cumsum(dummy)) %>% 
+	mutate(info = paste0(author, ". (", year, "): ", n %>% formatC(format = "f", big.mark = ",", digits = 0), " patients")) %>% 
+	ggplot(aes(x = fct_infreq(surgical_speciality))) +
 	#geom_col(colour = "blue", fill = NA) +
-	geom_point(aes(y = nth_study, fill = surgical_speciality, text = info), shape = 21, size = 4) +
+	geom_point(aes(y = nth_study, fill = n.groups, text = info), shape = 21, size = 3.5) +
 	theme_classic() +
-	geom_text(data = annual_summary, aes(y = -0.2, label = n_year %>% formatC(format = "f", big.mark = ",", digits = 0)), hjust = -0.3) +
+	geom_text(data = speciality_summary, aes(y = -0.2, label = n_speciality %>% formatC(format = "f", big.mark = ",", digits = 0)), hjust = -0.3) +
 	coord_flip() +
-	scale_x_continuous(breaks = 2007:2018) +
-	scale_y_continuous("Studies each year", limits = c(-0.2, 27)) +
-	scale_fill_brewer("N patients", palette = "Paired", direction = -1) +
-	theme(legend.position = "top")
+	scale_y_continuous("N studies from 2008 to mid-2018", limits = c(-0.2, 27)) +
+	scale_fill_viridis_d("N patients") +
+	theme(legend.position = "top") +
+	xlab("")
 
 
 ggplotly(p2, tooltip = c("text"))
 
 ```
+
+
+### Studies per outcome, coloured by N patients (69 studies - Excluding the GBD as it's not cohort/database/registry).
+
+```{r}
+
+
+	
+p3 = myplotdata %>% 	
+	mutate(dummy = 1) %>% 
+	group_by(outcome_primary) %>% 
+	arrange(n) %>% 
+	mutate(nth_study = cumsum(dummy)) %>% 
+	ggplot(aes(x = fct_infreq(outcome_primary))) +
+	#geom_col(colour = "blue", fill = NA) +
+	geom_point(aes(y = nth_study, fill = n.groups, text = info), shape = 21, size = 4) +
+	theme_classic() +
+	#geom_text(data = annual_summary, aes(y = -0.2, label = n_year %>% formatC(format = "f", big.mark = ",", digits = 0)), hjust = -0.3) +
+	coord_flip() +
+	#scale_x_continuous(breaks = 2007:2018) +
+	scale_y_continuous("Studies each year", limits = c(-0.2, 27)) +
+	scale_fill_viridis_d("N patients") +
+	theme(legend.position = "top") +
+	xlab("")
+
+
+ggplotly(p3, tooltip = c("text"))
+
+```
+
+
+
+### Study size vs n studies per speciality
+
+
+```{r}
+
+compare_size_studies = myplotdata %>% 
+	select(surgical_speciality, n) %>% 
+	group_by(surgical_speciality) %>% 
+	mutate(n_studies = n()) %>% 
+	mutate(n_patients = sum(n)) %>% 
+	mutate(n_patients.median = median(n)) %>% 
+	distinct(surgical_speciality, n_studies, n_patients, n_patients.median)
+
+# myplotdata$n %>% sum()
+# compare_size_studies$n_studies %>% sum()
+# compare_size_studies$n_patients %>% sum()
+
+compare_size_studies %>% 
+	gather(variable, value, -surgical_speciality) %>% 
+	filter(variable != "n_patients.median") %>% 
+	ggplot(aes(x  = surgical_speciality, y = value)) +
+	geom_col() +
+	facet_wrap(~variable, scales = "free") +
+	coord_flip() +
+	theme_bw()
+
+
+```
+
+
+
+### Study size vs n studies per speciality
+
+
+```{r}
+compare_size_studies %>% 
+	ggplot(aes(x = n_studies, y = n_patients.median)) +
+	geom_point() +
+	geom_label(aes(label = surgical_speciality)) +
+	theme_bw() +
+	scale_y_continuous(expand = c(0.1, 0.1)) +
+	scale_x_continuous(expand = c(0.1, 0.1))
+
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
