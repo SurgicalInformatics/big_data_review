@@ -392,7 +392,7 @@ lmic_countries = lmic_countries %>%
 # 	right_join(countries_matching) %>% 
 # 	filter(is.na(country_wb))
 
-mapdata = left_join(world_map, countrysummary) %>% 
+mapdata  = left_join(world_map, countrysummary)  %>% 
 	mutate(n_country.groups = cut(n_country,
 																breaks = c(0, 100, 1000, 3000, 15000, 40000, 473292))%>% 
 				 	fct_recode("<100 or Unknown" = "(0,100]",
@@ -412,9 +412,10 @@ mapdata = left_join(world_map, countrysummary) %>%
 	mutate(hic_or_lmic = ifelse(country == "French Guiana",  "lmic", hic_or_lmic)) %>% 
 	mutate(hic_or_lmic = ifelse(country == "Western Sahara", "lmic", hic_or_lmic)) %>% 
 	mutate(hic_or_lmic = ifelse(country == "Svalbard",       "lmic", hic_or_lmic)) %>% 
-	mutate(n_country.groups = ifelse(is.na(n_country.groups), hic_or_lmic, n_country.groups) %>% 
-				 	fct_recode("0" = "lmic",
-				 						 "HIC" = "hic") %>% 
+	mutate(n_country.groups = ifelse(is.na(n_country.groups),  hic_or_lmic, n_country.groups)) %>% 
+	mutate(n_country.groups = ifelse(!is.na(n_studies.groups) & n_country.groups == "lmic", "<100 or Unknown", n_country.groups)) %>% 
+	mutate(n_country.groups = fct_recode(n_country.groups, "0" = "lmic",
+																			 "HIC" = "hic") %>% 
 				 	fct_relevel(c("HIC", "0", "<100 or Unknown", "100-1,000", "1,000-3,000", "3000-15,000", "15,000-40,000", "40,000-428,346"))) %>% 
 	mutate(n_studies.groups = ifelse(is.na(n_studies.groups), hic_or_lmic, n_studies.groups) %>% 
 				 	fct_recode("0" = "lmic",
@@ -424,6 +425,7 @@ mapdata = left_join(world_map, countrysummary) %>%
 
 #mapdata$n_country.groups %>% levels()
 #mapdata$n_studies.groups %>% levels()
+
 ```
 
 
@@ -511,8 +513,8 @@ p3 = allstudies %>%
 	guides(fill=guide_legend(ncol=4)) +
 	xlab("") +
 	geom_segment(aes(xend = "Survival", y = -0.5, x = "Patient characteristics", yend = -0.5),
-               colour = "black", size=1,
-               arrow = arrow(length = unit(0.3, "cm")))
+							 colour = "black", size=1,
+							 arrow = arrow(length = unit(0.3, "cm")))
 
 
 
