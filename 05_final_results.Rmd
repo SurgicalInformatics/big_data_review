@@ -45,7 +45,7 @@ allstudies = read_csv("final_included_papers_august2018.csv", skip = 19) %>%
 				 	fct_relevel("Patient characteristics", "Incidence", "Access", "Outcomes of surgery", "Patient cost", "Survival")) %>% 
 	mutate(n_comment = fct_explicit_na(n_comment, "single")) %>% 
 	mutate(n_comment.2groups = fct_collapse(n_comment,
-																					"lmic_separated" = c("single", "multiple", "multiple_lmic"),
+																					"lmic_separated"    = c("single", "multiple", "multiple_lmic"),
 																					"lmic_hic_together" = c("multiple_worldwide", "multiple_hic"))) %>% 
 	mutate(n.groups = cut(n,
 												breaks = c(300, 500, 1000, 2000, 5000, 10000, 428346)) %>% 
@@ -92,6 +92,8 @@ rm(gs_countries, gs1_countries, gs2_countries)
 lmic_countries = read_csv("wb_lmic_countries.csv") %>% 
 	rename(country_wb = country)
 
+
+
 countrylevel = allstudies %>% 
 	filter(n_comment != "multiple_worldwide") %>% 
 	select(study_id, year, n_studytotal = n, countries) %>% 
@@ -118,6 +120,10 @@ countrylevel = allstudies %>%
 	left_join(lmic_countries)
 
 rm(add_globalsurg_countries)
+
+not_separated = allstudies %>% 
+	filter(! study_id %in% countrylevel$study_id)
+
 
 ```
 
@@ -186,12 +192,20 @@ countrylevel %>%
 
 ```
 
+Studies where the list of countries was not separated/given:
+
+```{r}
+
+not_separated %>% select(study_id) %>% kable()
+
+```
+
 
 
 ```{r sumamrise_countries}
 
 countrysummary = countrylevel %>% 
-	filter(lmic == "lmic") %>% 
+	filter(hic_or_lmic == "lmic") %>% 
 	filter() %>% 
 	group_by(country) %>% 
 	summarise(n_studies = n_distinct(study_id),
@@ -236,7 +250,8 @@ p1 = lmic_separated %>%
 	scale_fill_viridis_d("N patients") +
 	theme(legend.position = c(0.85, 0.2),
 				axis.text = element_text(colour = "black")) +
-	xlab("   ")
+	xlab("   ") +
+	ggtitle("(a)")
 
 
 p2 = lmic_separated %>% 	
@@ -258,7 +273,8 @@ p2 = lmic_separated %>%
 	scale_x_continuous(breaks = 2008:2018) +
 	theme(axis.text = element_text(colour = "black")) +
 	xlab("") +
-	ylab("Cumulative number of patients")
+	ylab("Cumulative number of patients")  +
+	ggtitle("(b)")
 
 ```
 
@@ -302,6 +318,7 @@ countrysummary = countrysummary %>%
 	) %>% as.character())
 
 
+
 # Get map ------------
 # https://groups.google.com/forum/#!msg/ggplot2/KAKhoE0GO4U/lsAXwQWNwhoJ
 # Sundar Dorai-Raj
@@ -340,32 +357,69 @@ world_map <- ConvertWorldSimple(wrld_simpl, min.area = 0.8) %>%
 
 
 # # check that names match
-# countries_matching = world_map %>% 
-# 	distinct(country) %>% 
-# 	#rename(country = region) %>% 
+# countries_matching = world_map %>%
+# 	distinct(country) %>%
+# 	#rename(country = region) %>%
 # 	mutate(nameorigin = "mapdata")
 # 
-# mismatches = countrysummary %>% 
-# 	left_join(countries_matching) %>% 
+# mismatches = countrysummary %>%
+# 	left_join(countries_matching) %>%
 # 	filter(is.na(nameorigin))
+
+lmic_countries = lmic_countries %>% 
+	mutate(country = countrycode::countrycode(country_wb, origin = "country.name", destination = "country.name")) %>% 
+	mutate(country = fct_recode(country,
+															"Bosnia and Herzegovina" = "Bosnia & Herzegovina",
+															"Burma"                  = "Myanmar (Burma)",
+															"Congo"                  = "Congo - Brazzaville",
+															"Democratic Republic of the Congo" = "Congo - Kinshasa",
+															"Czech Republic"             = "Czechia",
+															"Iran (Islamic Republic of)" = "Iran",
+															"Cote d'Ivoire"              = "Côte d’Ivoire",
+															"Korea, Republic of"         = "South Korea",
+															"Korea, Democratic People's Republic of" = "North Korea",
+															"Lao People's Democratic Republic" = "Laos",
+															"Libyan Arab Jamahiriya"    = "Libya",
+															"The former Yugoslav Republic of Macedonia" = "Macedonia",
+															"Republic of Moldova" = "Moldova",
+															"Syrian Arab Republic" = "Syria",
+															"United Republic of Tanzania" = "Tanzania",
+															"Viet Nam"   = "Vietnam"
+	))
+
+
+# mismatches2 = lmic_countries %>%
+# 	right_join(countries_matching) %>% 
+# 	filter(is.na(country_wb))
 
 mapdata = left_join(world_map, countrysummary) %>% 
 	mutate(n_country.groups = cut(n_country,
-																breaks = c(0, 100, 300, 1000, 3000, 15000, 40000, 473292))%>% 
+																breaks = c(0, 100, 1000, 3000, 15000, 40000, 473292))%>% 
 				 	fct_recode("<100 or Unknown" = "(0,100]",
-				 						 "100-300"         = "(100,300]",
-				 						 "300-1,000"       = "(300,1e+03]",
+				 						 "100-1,000"       = "(100,1e+03]",
 				 						 "1,000-3,000"     = "(1e+03,3e+03]",
-				 						 "1000-15,000"     = "(3e+03,1.5e+04]",
+				 						 "3000-15,000"     = "(3e+03,1.5e+04]",
 				 						 "15,000-40,000"   = "(1.5e+04,4e+04]" ,
-				 						 "40,000-428,346"  = "(4e+04,4.73e+05]")) %>% 
+				 						 "40,000-428,346"  = "(4e+04,4.73e+05]") %>% as.character()) %>% 
 	mutate(n_studies.groups = cut(n_studies, breaks = c(0, 1, 2, 3, 5, 10, 15)) %>% 
 				 	fct_recode("1"     = "(0,1]",
 				 						 "2"     = "(1,2]",
 				 						 "3"     = "(2,3]",
 				 						 "4-5"   = "(3,5]",
 				 						 "6-10"  = "(5,10]",
-				 						 "11-15" = "(10,15]"))
+				 						 "11-15" = "(10,15]") %>% as.character()) %>% 
+	left_join(lmic_countries) %>% 
+	mutate(hic_or_lmic = ifelse(country == "French Guiana",  "lmic", hic_or_lmic)) %>% 
+	mutate(hic_or_lmic = ifelse(country == "Western Sahara", "lmic", hic_or_lmic)) %>% 
+	mutate(hic_or_lmic = ifelse(country == "Svalbard",       "lmic", hic_or_lmic)) %>% 
+	mutate(n_country.groups = ifelse(is.na(n_country.groups), hic_or_lmic, n_country.groups) %>% 
+				 	fct_recode("0" = "lmic",
+				 						 "HIC" = "hic") %>% 
+				 	fct_relevel(c("HIC", "0", "<100 or Unknown", "100-1,000", "1,000-3,000", "3000-15,000", "15,000-40,000", "40,000-428,346"))) %>% 
+	mutate(n_studies.groups = ifelse(is.na(n_studies.groups), hic_or_lmic, n_studies.groups) %>% 
+				 	fct_recode("0" = "lmic",
+				 						 "HIC" = "hic") %>% 
+				 	fct_relevel(c("HIC", "0", "1", "2", "3", "4-5", "6-10", "11-15")))
 
 
 #mapdata$n_country.groups %>% levels()
@@ -375,22 +429,25 @@ mapdata = left_join(world_map, countrysummary) %>%
 
 ```{r map_n_studies}
 
-mycols = viridisLite::viridis(n = mapdata$n_country.groups %>% levels() %>% length())
+mycols = rev(c("#FBE823", "#91D643", "#37B87A", "#22908D", "#443A83", "#420152", "lightgrey", "white"))
+
+my_map_theme = 	theme(legend.position = c(0, 0),
+											legend.background = element_blank(),
+											#legend.justification = 'center',
+											legend.text = element_text(size=16, face='bold'),
+											legend.title = element_blank(),
+											plot.caption = element_text(size=9, face='bold'),
+											plot.title   = element_text(size=18))
 
 m1 = mapdata %>% 
 	ggplot(aes(x=long, y = lat, group = group, fill = n_studies.groups)) +
-	geom_polygon(colour = "black") +
+	geom_polygon(colour = "black", ) +
 	#theme_void() +
 	coord_map("moll") +
 	ggthemes::theme_map() +
-	theme(legend.position = "right",
-				#legend.justification = 'center',
-				legend.text = element_text(size=10, face='bold'),
-				legend.title = element_blank(),
-				plot.caption = element_text(size=9, face='bold'),
-				plot.title   = element_text(size=12))+
+	my_map_theme +
 	guides(fill=guide_legend(ncol=1, reverse=TRUE)) +
-	scale_fill_viridis_d(na.value = NA) +
+	scale_fill_manual(values = mycols) +
 	ggtitle("(a) N studies per LMIC country")
 
 
@@ -400,9 +457,9 @@ m1 = mapdata %>%
 
 
 
-```{r map_n_patients}
+```{r map_n_patients, fig.width=10}
 
-mycols = viridisLite::viridis(n = mapdata$n_country.groups %>% levels() %>% length())
+#mycols = viridisLite::viridis(n = mapdata$n_country.groups %>% levels() %>% length())
 
 m2 = mapdata %>% 
 	ggplot(aes(x=long, y = lat, group = group, fill = n_country.groups)) +
@@ -410,24 +467,19 @@ m2 = mapdata %>%
 	#theme_void() +
 	coord_map("moll") +
 	ggthemes::theme_map() +
-	theme(legend.position = "right",
-				#legend.justification = 'center',
-				legend.text = element_text(size=10, face='bold'),
-				legend.title = element_blank(),
-				plot.caption = element_text(size=9, face='bold'),
-				plot.title   = element_text(size=12))+
+	my_map_theme +
 	guides(fill=guide_legend(ncol=1, reverse=TRUE)) +
-	scale_fill_viridis_d(na.value = NA) +
-	ggtitle("(b) N patients per LMIC country")
-
-
+	scale_fill_manual(values = mycols) +
+	ggtitle("(b) N patients per LMIC country") +
+	#annotate("rect", xmin = -158, xmax = 20, ymin = 0, ymax = 20, fill = "white") +
+	NULL
 
 
 ```
 
 
 
-```{r, fig.width=20}
+```{r, fig.width=18}
 
 m1+m2
 
@@ -440,7 +492,7 @@ m1+m2
 
 ```{r}
 
-	
+
 p3 = allstudies %>% 	
 	mutate(dummy = 1) %>% 
 	group_by(outcome_primary) %>% 
@@ -452,10 +504,16 @@ p3 = allstudies %>%
 	coord_flip() +
 	scale_y_continuous("Studies per outcome") +
 	scale_fill_viridis_d("N patients") +
-		theme(legend.position = c(0.85, 0.2),
-				axis.text = element_text(colour = "black")) +
+	theme(legend.position = c(0.75, 0.2),
+				legend.text = element_text(size = 12),
+				axis.text = element_text(colour = "black", size  = 12),
+				axis.title = element_text(size = 14)) +
 	guides(fill=guide_legend(ncol=4)) +
-	xlab("")
+	xlab("") +
+	geom_segment(aes(xend = "Survival", y = -0.5, x = "Patient characteristics", yend = -0.5),
+               colour = "black", size=1,
+               arrow = arrow(length = unit(0.3, "cm")))
+
 
 
 ```

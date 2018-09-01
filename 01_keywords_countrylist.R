@@ -11,8 +11,8 @@ wb %>%
 
 wb_lmic = wb %>% 
 	filter(groupname == "Low & middle income" | groupname  == "High income") %>% 
-	select(country = countryname, lmic = groupname) %>% 
-	mutate(lmic = fct_recode(lmic, "lmic" = "Low & middle income", "hic" = "High income"))
+	select(country = countryname, hic_or_lmic = groupname) %>% 
+	mutate(hic_or_lmic = fct_recode(hic_or_lmic, "lmic" = "Low & middle income", "hic" = "High income"))
 
 
 gs_countries = read_csv("countries_gs1_gs2.csv")
