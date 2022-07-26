@@ -1,0 +1,1 @@
+S R Knight, R Ots, M Maimbo, T M Drake, C J Fairfield, E M Harrison, Systematic review of the use of big data to improve surgery in low- and middle-income countries, British Journal of Surgery, Volume 106, Issue 2, January 2019, Pages e62–e72, https://doi.org/10.1002/bjs.11052
